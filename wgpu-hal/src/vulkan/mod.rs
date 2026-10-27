@@ -1599,10 +1599,6 @@ mod tests {
             map_pipeline_err(vk::Result::ERROR_OUT_OF_DEVICE_MEMORY, stages, "f"),
             crate::PipelineError::Device(crate::DeviceError::OutOfMemory)
         );
-        assert_eq!(
-            map_pipeline_err(vk::Result::ERROR_DEVICE_LOST, stages, "f"),
-            crate::PipelineError::Device(crate::DeviceError::Lost)
-        );
         // A driver's shader compiler failing is not a device error.
         for code in [
             vk::Result::ERROR_UNKNOWN,
@@ -1617,6 +1613,19 @@ mod tests {
                 other => panic!("{code:?} mapped to {other:?}"),
             }
         }
+    }
+
+    #[test]
+    #[cfg_attr(feature = "device_lost_panic", should_panic(expected = "Device lost"))]
+    fn pipeline_creation_device_lost() {
+        assert_eq!(
+            map_pipeline_err(
+                vk::Result::ERROR_DEVICE_LOST,
+                wgt::ShaderStages::VERTEX_FRAGMENT,
+                "f"
+            ),
+            crate::PipelineError::Device(crate::DeviceError::Lost)
+        );
     }
 
     #[test]
