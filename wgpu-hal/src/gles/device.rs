@@ -219,7 +219,11 @@ impl super::Device {
         } else {
             // (some drivers - ANGLE on an old Direct3D 11 one - fail without a word: say so,
             // the error read "Internal error in VERTEX shader:" and nothing after it)
-            let msg = if msg.trim().is_empty() { "the driver compiled it with an error and gave no log".to_string() } else { msg };
+            let msg = if msg.trim().is_empty() {
+                "the driver compiled it with an error and gave no log".to_string()
+            } else {
+                msg
+            };
             log::error!("\tShader compilation failed: {msg}");
             unsafe { gl.delete_shader(raw) };
             Err(crate::PipelineError::Linkage(
@@ -426,7 +430,10 @@ impl super::Device {
         let mut immediates_items = ArrayVec::<_, { crate::MAX_CONCURRENT_SHADER_STAGES }>::new();
         let mut sampler_map = [None; super::MAX_TEXTURE_SLOTS];
         let mut has_stages = wgt::ShaderStages::empty();
-        let mut sources = ArrayVec::<(naga::ShaderStage, String, Option<&str>), { crate::MAX_CONCURRENT_SHADER_STAGES + 1 }>::new();
+        let mut sources = ArrayVec::<
+            (naga::ShaderStage, String, Option<&str>),
+            { crate::MAX_CONCURRENT_SHADER_STAGES + 1 },
+        >::new();
         let mut clip_distance_count = 0;
 
         for &(naga_stage, stage) in &shaders {
@@ -478,7 +485,8 @@ impl super::Device {
         }
 
         if !from_cache {
-            let mut shaders_to_delete = ArrayVec::<_, { crate::MAX_CONCURRENT_SHADER_STAGES + 1 }>::new();
+            let mut shaders_to_delete =
+                ArrayVec::<_, { crate::MAX_CONCURRENT_SHADER_STAGES + 1 }>::new();
             for (naga_stage, source, label) in &sources {
                 let shader = unsafe { Self::compile_shader(gl, source, *naga_stage, *label) };
                 match shader {
@@ -508,19 +516,30 @@ impl super::Device {
         log::debug!("\tLinked program {program:?}");
 
         let linked_ok = unsafe { gl.get_program_link_status(program) };
-        let msg = if from_cache { String::new() } else { unsafe { gl.get_program_info_log(program) } };
+        let msg = if from_cache {
+            String::new()
+        } else {
+            unsafe { gl.get_program_info_log(program) }
+        };
         #[cfg(native)]
         if linked_ok && !from_cache {
             if let (Some(cache), Some(key)) = (cache, key) {
                 if let Some(binary) = unsafe { gl.get_program_binary(program) } {
                     if !binary.buffer.is_empty() {
-                        cache.programs.lock().insert(key, (binary.format, binary.buffer));
+                        cache
+                            .programs
+                            .lock()
+                            .insert(key, (binary.format, binary.buffer));
                     }
                 }
             }
         }
         if !linked_ok {
-            let msg = if msg.trim().is_empty() { "the driver failed to link the program and gave no log".to_string() } else { msg };
+            let msg = if msg.trim().is_empty() {
+                "the driver failed to link the program and gave no log".to_string()
+            } else {
+                msg
+            };
             log::error!("\tProgram link failed: {msg}");
             return Err(crate::PipelineError::Linkage(has_stages, msg));
         }
@@ -1483,7 +1502,14 @@ impl crate::Device for super::Device {
             shaders.push((naga::ShaderStage::Fragment, fs));
         }
         let inner = unsafe {
-            self.create_pipeline(gl, shaders, desc.layout, desc.label, desc.multiview_mask, desc.cache)
+            self.create_pipeline(
+                gl,
+                shaders,
+                desc.layout,
+                desc.label,
+                desc.multiview_mask,
+                desc.cache,
+            )
         }?;
 
         let (vertex_buffers, vertex_attributes) = {
@@ -1574,7 +1600,9 @@ impl crate::Device for super::Device {
         let gl = &self.shared.context.try_lock()?;
         let mut shaders = ArrayVec::new();
         shaders.push((naga::ShaderStage::Compute, &desc.stage));
-        let inner = unsafe { self.create_pipeline(gl, shaders, desc.layout, desc.label, None, desc.cache) }?;
+        let inner = unsafe {
+            self.create_pipeline(gl, shaders, desc.layout, desc.label, None, desc.cache)
+        }?;
 
         self.counters.compute_pipelines.add(1);
 
@@ -1605,7 +1633,10 @@ impl crate::Device for super::Device {
     ) -> Result<super::PipelineCache, crate::PipelineCacheError> {
         // (without `Features::PIPELINE_CACHE` - no binary formats - it holds nothing and the
         // programs are compiled as before)
-        Ok(desc.data.map(super::PipelineCache::from_data).unwrap_or_default())
+        Ok(desc
+            .data
+            .map(super::PipelineCache::from_data)
+            .unwrap_or_default())
     }
     fn pipeline_cache_validation_key(&self) -> Option<[u8; 16]> {
         Some(self.shared.pipeline_cache_validation_key)

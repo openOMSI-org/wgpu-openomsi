@@ -806,8 +806,20 @@ impl PipelineCache {
     }
 
     fn driver_key(vendor: &str, renderer: &str, version: &str) -> [u8; 16] {
-        let a = Self::fnv(version.as_bytes(), Self::fnv(renderer.as_bytes(), Self::fnv(vendor.as_bytes(), 0xcbf2_9ce4_8422_2325)));
-        let b = Self::fnv(vendor.as_bytes(), Self::fnv(version.as_bytes(), Self::fnv(renderer.as_bytes(), 0x6c62_272e_07bb_0142)));
+        let a = Self::fnv(
+            version.as_bytes(),
+            Self::fnv(
+                renderer.as_bytes(),
+                Self::fnv(vendor.as_bytes(), 0xcbf2_9ce4_8422_2325),
+            ),
+        );
+        let b = Self::fnv(
+            vendor.as_bytes(),
+            Self::fnv(
+                version.as_bytes(),
+                Self::fnv(renderer.as_bytes(), 0x6c62_272e_07bb_0142),
+            ),
+        );
         let mut key = [0u8; 16];
         key[..8].copy_from_slice(&a.to_le_bytes());
         key[8..].copy_from_slice(&b.to_le_bytes());
@@ -855,7 +867,8 @@ impl PipelineCache {
 
     fn to_data(&self) -> Vec<u8> {
         let programs = self.programs.lock();
-        let mut out = Vec::with_capacity(12 + programs.values().map(|(_, b)| 16 + b.len()).sum::<usize>());
+        let mut out =
+            Vec::with_capacity(12 + programs.values().map(|(_, b)| 16 + b.len()).sum::<usize>());
         out.extend_from_slice(Self::MAGIC);
         out.extend_from_slice(&(programs.len() as u32).to_le_bytes());
         for (key, (format, bytes)) in programs.iter() {
@@ -1255,16 +1268,34 @@ mod pipeline_cache_tests {
         assert_eq!(back.programs.lock().get(&7), Some(&(0x8741, vec![1, 2, 3])));
         assert_eq!(back.programs.lock().len(), 2);
         // truncated, or another layout: nothing (the programs are compiled again)
-        assert!(PipelineCache::from_data(&data[..data.len() - 1]).programs.lock().is_empty());
-        assert!(PipelineCache::from_data(b"not a cache").programs.lock().is_empty());
+        assert!(PipelineCache::from_data(&data[..data.len() - 1])
+            .programs
+            .lock()
+            .is_empty());
+        assert!(PipelineCache::from_data(b"not a cache")
+            .programs
+            .lock()
+            .is_empty());
     }
 
     #[test]
     fn a_key_follows_the_sources_and_the_driver() {
         let src = |s: &str| vec![(naga::ShaderStage::Vertex, String::from(s), None)];
-        assert_eq!(PipelineCache::key("300 es", &src("a")), PipelineCache::key("300 es", &src("a")));
-        assert_ne!(PipelineCache::key("300 es", &src("a")), PipelineCache::key("300 es", &src("b")));
-        assert_ne!(PipelineCache::key("300 es", &src("a")), PipelineCache::key("310 es", &src("a")));
-        assert_ne!(PipelineCache::driver_key("Qualcomm", "Adreno 740", "OpenGL ES 3.2 V@0615"), PipelineCache::driver_key("Qualcomm", "Adreno 740", "OpenGL ES 3.2 V@0676"));
+        assert_eq!(
+            PipelineCache::key("300 es", &src("a")),
+            PipelineCache::key("300 es", &src("a"))
+        );
+        assert_ne!(
+            PipelineCache::key("300 es", &src("a")),
+            PipelineCache::key("300 es", &src("b"))
+        );
+        assert_ne!(
+            PipelineCache::key("300 es", &src("a")),
+            PipelineCache::key("310 es", &src("a"))
+        );
+        assert_ne!(
+            PipelineCache::driver_key("Qualcomm", "Adreno 740", "OpenGL ES 3.2 V@0615"),
+            PipelineCache::driver_key("Qualcomm", "Adreno 740", "OpenGL ES 3.2 V@0676")
+        );
     }
 }

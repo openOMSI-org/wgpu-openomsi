@@ -233,7 +233,8 @@ impl super::Adapter {
         let renderer = unsafe { gl.get_parameter_string(renderer_const) };
         let version = unsafe { gl.get_parameter_string(glow::VERSION) };
         // (cached program binaries are only good for the driver that made them)
-        let pipeline_cache_validation_key = super::PipelineCache::driver_key(&vendor, &renderer, &version);
+        let pipeline_cache_validation_key =
+            super::PipelineCache::driver_key(&vendor, &renderer, &version);
         log::debug!("Vendor: {vendor}");
         log::debug!("Renderer: {renderer}");
         log::debug!("Version: {version}");
@@ -524,7 +525,9 @@ impl super::Adapter {
         // cache, where the driver offers at least one binary format.
         #[cfg(native)]
         features.set(wgt::Features::PIPELINE_CACHE, {
-            let binaries = supported((3, 0), (4, 1)) || extensions.contains("GL_ARB_get_program_binary") || extensions.contains("GL_OES_get_program_binary");
+            let binaries = supported((3, 0), (4, 1))
+                || extensions.contains("GL_ARB_get_program_binary")
+                || extensions.contains("GL_OES_get_program_binary");
             binaries && unsafe { gl.get_parameter_i32(glow::NUM_PROGRAM_BINARY_FORMATS) } > 0
         });
         if extensions.contains("GL_ARB_timer_query") {
