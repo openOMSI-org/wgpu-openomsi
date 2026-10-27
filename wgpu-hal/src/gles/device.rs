@@ -467,7 +467,11 @@ impl super::Device {
         let mut from_cache = false;
         #[cfg(native)]
         if let (Some(cache), Some(key)) = (cache, key) {
-            if let Some((format, buffer)) = cache.programs.lock().get(&key).cloned() {
+            // (the lock is let go here, before the binary is tried: a refused one is taken
+            // out below, and with the scrutinee's guard alive through the `if let` that took
+            // the lock a second time and never returned)
+            let cached = cache.programs.lock().get(&key).cloned();
+            if let Some((format, buffer)) = cached {
                 unsafe { gl.program_binary(program, &glow::ProgramBinary { buffer, format }) };
                 from_cache = unsafe { gl.get_program_link_status(program) };
                 if !from_cache {

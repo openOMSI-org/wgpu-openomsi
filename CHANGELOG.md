@@ -68,6 +68,7 @@ Bottom level categories:
 - GLES: a shader compile or program link that fails without the driver giving a log (ANGLE on an old Direct3D 11 driver) says so in the error instead of an empty message.
 - `Device` equality, ordering and hashing take the device's instance into account: devices of two instances (two renderers in one process, tests running side by side) compared equal, their ids being counted per instance.
 - GLES: `Features::PIPELINE_CACHE` (native only) where the driver can save program binaries (GL 4.1, OpenGL ES 3.0, `GL_ARB_get_program_binary` or `GL_OES_get_program_binary`, with at least one binary format). A `PipelineCache` keeps each linked program's binary keyed by its shader sources and the pipeline's state; a pipeline made again with the cache loads the binary instead of compiling (seconds per start on phone and ANGLE drivers). `PipelineCache::get_data` serializes the binaries; data from another GL vendor, renderer or driver version is refused (with `fallback: true`, the cache starts empty), and a binary the driver refuses to load is compiled again from source.
+- GLES: a pipeline made with a `PipelineCache` whose binary the driver refuses (data from before a driver update, a damaged file) no longer hangs: taking the refused binary out of the cache locked the cache a second time while the first lock was still held.
 
 #### Backported from v30
 
