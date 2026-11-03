@@ -786,7 +786,7 @@ jobs:
           # Note: this is a *smaller* set of tests than `cargo xtask miri` runs;
           # it is ones that are both important and cheap.
           # Consider expanding it to include some API tests with the noop backend.
-          cargo miri test --package=wgpu --no-default-features -- write_only
+          cargo miri test --package=wgpu-types --no-default-features --features std,serde --lib -- write_only 2>&1 | tee miri-write-only.log && grep -Eq 'test result: ok\. [1-9][0-9]* passed;' miri-write-only.log
 
 
   fmt:
