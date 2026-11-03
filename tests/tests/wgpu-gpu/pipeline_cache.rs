@@ -4,6 +4,8 @@ use wgpu_test::{gpu_test, GpuTestConfiguration, TestParameters, TestingContext};
 
 pub fn all_tests(vec: &mut Vec<wgpu_test::GpuTestInitializer>) {
     vec.push(PIPELINE_CACHE);
+    #[cfg(not(target_arch = "wasm32"))]
+    vec.push(PIPELINE_CACHE_REFUSED_BINARY);
 }
 
 /// We want to test that using a pipeline cache doesn't cause failure
@@ -150,6 +152,148 @@ async fn pipeline_cache_test(ctx: TestingContext) {
     // However, that doesn't actually work, because drivers have their own internal caches.
     // This does work on my machine if I set `MESA_DISABLE_PIPELINE_CACHE=1`
     // before running the test; but of course that is not a realistic scenario
+}
+
+/// A GLES pipeline cache whose program binaries the driver refuses (a driver update since it
+/// was written, or a damaged file) still gives a working pipeline: the program is compiled
+/// again. Taking the refused binary out of the cache locked the cache a second time while
+/// the first lock was held, and the pipeline's creation never returned.
+#[cfg(not(target_arch = "wasm32"))]
+#[gpu_test]
+static PIPELINE_CACHE_REFUSED_BINARY: GpuTestConfiguration = GpuTestConfiguration::new()
+    .parameters(
+        TestParameters::default()
+            .test_features_limits()
+            .features(wgpu::Features::PIPELINE_CACHE),
+    )
+    .run_async(pipeline_cache_refused_binary_test);
+
+/// The GLES backend's cache inside `data` (`wgpuGLp1`, then its programs) with every program
+/// binary's bytes zeroed: the same programs under the same keys, none a driver takes back.
+/// False when `data` holds no GLES cache (another backend's).
+#[cfg(not(target_arch = "wasm32"))]
+fn spoil_gles_binaries(data: &mut [u8]) -> bool {
+    const MAGIC: &[u8] = b"wgpuGLp1";
+    let Some(at) = data.windows(MAGIC.len()).position(|w| w == MAGIC) else {
+        return false;
+    };
+    let mut pos = at + MAGIC.len();
+    let read_u32 =
+        |data: &[u8], pos: usize| u32::from_le_bytes(data[pos..pos + 4].try_into().unwrap());
+    let count = read_u32(data, pos);
+    pos += 4;
+    for _ in 0..count {
+        // key (8), binary format (4), length (4), the binary
+        let len = read_u32(data, pos + 12) as usize;
+        pos += 16;
+        data[pos..pos + len].fill(0);
+        pos += len;
+    }
+    count > 0
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+async fn pipeline_cache_refused_binary_test(ctx: TestingContext) {
+    let sm = ctx
+        .device
+        .create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("shader"),
+            source: wgpu::ShaderSource::Wgsl(shader().into()),
+        });
+    let bgl = ctx
+        .device
+        .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("bind_group_layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: false },
+                    has_dynamic_offset: false,
+                    min_binding_size: NonZeroU64::new(ARRAY_SIZE * 4),
+                },
+                count: None,
+            }],
+        });
+    let gpu_buffer = ctx.device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("gpu_buffer"),
+        size: ARRAY_SIZE * 4,
+        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+        mapped_at_creation: false,
+    });
+    let cpu_buffer = ctx.device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("cpu_buffer"),
+        size: ARRAY_SIZE * 4,
+        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let bind_group = ctx.device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("bind_group"),
+        layout: &bgl,
+        entries: &[wgpu::BindGroupEntry {
+            binding: 0,
+            resource: gpu_buffer.as_entire_binding(),
+        }],
+    });
+    let pipeline_layout = ctx
+        .device
+        .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("pipeline_layout"),
+            bind_group_layouts: &[Some(&bgl)],
+            immediate_size: 0,
+        });
+    let pipeline = |cache: &wgpu::PipelineCache| {
+        ctx.device
+            .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some("pipeline"),
+                layout: Some(&pipeline_layout),
+                module: &sm,
+                entry_point: Some("main"),
+                compilation_options: Default::default(),
+                cache: Some(cache),
+            })
+    };
+    let first_cache = unsafe {
+        ctx.device
+            .create_pipeline_cache(&wgpu::PipelineCacheDescriptor {
+                label: Some("pipeline_cache"),
+                data: None,
+                fallback: false,
+            })
+    };
+    drop(pipeline(&first_cache));
+    let mut data = first_cache.get_data().expect("the cache's data");
+    if !spoil_gles_binaries(&mut data) {
+        // (not the GLES backend's cache, or one without a program in it)
+        return;
+    }
+    let spoiled = unsafe {
+        ctx.device
+            .create_pipeline_cache(&wgpu::PipelineCacheDescriptor {
+                label: Some("spoiled pipeline_cache"),
+                data: Some(&data),
+                fallback: false,
+            })
+    };
+    // (on another thread, so that a pipeline whose creation never returns fails the test
+    // instead of holding it up for ever)
+    let (device, module, layout) = (ctx.device.clone(), sm.clone(), pipeline_layout.clone());
+    let (done, made) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let made = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("pipeline from a refused binary"),
+            layout: Some(&layout),
+            module: &module,
+            entry_point: Some("main"),
+            compilation_options: Default::default(),
+            cache: Some(&spoiled),
+        });
+        let _ = done.send(made);
+    });
+    let made = made
+        .recv_timeout(std::time::Duration::from_secs(60))
+        .expect("the pipeline was not made within a minute from a cache whose binary the driver refused: a deadlock");
+    validate_pipeline(&ctx, made, &bind_group, &gpu_buffer, &cpu_buffer).await;
 }
 
 async fn validate_pipeline(
