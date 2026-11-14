@@ -3994,7 +3994,10 @@ impl dispatch::SurfaceOutputDetailInterface for CoreSurfaceOutputDetail {
         // frame that would not be shown anyway. (Upstream made the release non-fatal in
         // v30, #9678.)
         if let Err(err) = self.context.0.surface_texture_discard(self.surface_id) {
-            log::error!("Surface::discard_texture: {}", self.context.format_error(&err));
+            log::error!(
+                "Surface::discard_texture: {}",
+                self.context.format_error(&err)
+            );
         }
     }
 }
